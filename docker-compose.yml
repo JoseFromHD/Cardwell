@@ -1,0 +1,19 @@
+services:
+  cardwell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cardwell:latest
+    container_name: cardwell
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      CARDWELL_DATA_DIR: /data
+    volumes:
+      - cardwell_data:/data
+
+volumes:
+  cardwell_data:
+    name: cardwell_data

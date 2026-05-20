@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cardwell</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Decks">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div>
+            <h1>Cardwell</h1>
+            <p id="collectionSummary">0 decks</p>
+          </div>
+        </div>
+
+        <div class="deck-actions">
+          <button class="primary" id="newDeckButton" type="button">New deck</button>
+          <button class="ghost" id="exportButton" type="button" title="Export backup">Export</button>
+          <label class="ghost import-button" title="Import backup">
+            Import
+            <input id="importInput" type="file" accept="application/json">
+          </label>
+        </div>
+
+        <nav class="deck-list" id="deckList" aria-label="Deck list"></nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Self-hosted study cards</p>
+            <h2 id="deckTitle">Select a deck</h2>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost" id="renameDeckButton" type="button">Rename</button>
+            <button class="danger" id="deleteDeckButton" type="button">Delete</button>
+          </div>
+        </header>
+
+        <section class="stats-grid" aria-label="Deck statistics">
+          <article>
+            <span id="statCards">0</span>
+            <p>Cards</p>
+          </article>
+          <article>
+            <span id="statDue">0</span>
+            <p>Due now</p>
+          </article>
+          <article>
+            <span id="statMastered">0</span>
+            <p>Mastered</p>
+          </article>
+        </section>
+
+        <section class="study-panel" aria-label="Study">
+          <div class="study-card" id="studyCard">
+            <p id="studyLabel">Question</p>
+            <button id="flipButton" type="button">
+              <span id="studyText">Add a card to begin.</span>
+            </button>
+          </div>
+          <div class="rating-actions" id="ratingActions" hidden>
+            <button data-rating="again" type="button">Again</button>
+            <button data-rating="hard" type="button">Hard</button>
+            <button data-rating="good" type="button">Good</button>
+            <button data-rating="easy" type="button">Easy</button>
+          </div>
+        </section>
+
+        <section class="editor-grid">
+          <form class="card-form" id="cardForm">
+            <h3 id="formTitle">Add card</h3>
+            <label>
+              Front
+              <textarea id="frontInput" rows="4" required></textarea>
+            </label>
+            <label>
+              Back
+              <textarea id="backInput" rows="4" required></textarea>
+            </label>
+            <div class="form-actions">
+              <button class="primary" type="submit" id="saveCardButton">Add card</button>
+              <button class="ghost" type="button" id="cancelEditButton" hidden>Cancel</button>
+            </div>
+          </form>
+
+          <section class="cards-panel" aria-label="Cards">
+            <div class="panel-heading">
+              <h3>Cards</h3>
+              <input id="searchInput" type="search" placeholder="Search cards">
+            </div>
+            <div class="card-list" id="cardList"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <template id="deckTemplate">
+      <button class="deck-item" type="button">
+        <span class="deck-name"></span>
+        <span class="deck-count"></span>
+      </button>
+    </template>
+
+    <template id="cardTemplate">
+      <article class="card-row">
+        <div>
+          <h4></h4>
+          <p></p>
+        </div>
+        <div class="row-actions">
+          <button class="ghost edit-card" type="button">Edit</button>
+          <button class="danger delete-card" type="button">Delete</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
