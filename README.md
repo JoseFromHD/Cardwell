@@ -130,6 +130,8 @@ Cardwell supports three deck roles:
 
 Admins can create users. Deck owners can share decks with existing users from the Access panel.
 
+Study progress is tracked per user, so shared decks can be studied independently without one user's review history changing another user's due cards.
+
 ## Scaling Notes
 
 This version is containerized and mostly stateless at the web process level, with persistent data mounted separately. Sessions, users, deck access, and cards live in SQLite. SQLite is excellent for a small self-hosted install, but it is still a single-writer database. For heavier multi-user use, the next step is to move storage to Postgres and run multiple app containers behind a reverse proxy such as Caddy, Traefik, or Nginx.

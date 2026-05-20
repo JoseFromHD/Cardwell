@@ -10,6 +10,7 @@ import re
 import secrets
 import sqlite3
 import time
+from urllib.parse import urlparse
 import uuid
 
 
@@ -24,6 +25,13 @@ DEFAULT_ADMIN_USERNAME = os.environ.get("CARDWELL_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("CARDWELL_ADMIN_PASSWORD", "change-me-now")
 COOKIE_SECURE = os.environ.get("CARDWELL_COOKIE_SECURE", "false").lower() == "true"
 ROLE_ORDER = {"viewer": 1, "editor": 2, "owner": 3}
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,80}$")
+PUBLIC_FILES = {
+    "/": "index.html",
+    "/index.html": "index.html",
+    "/styles.css": "styles.css",
+    "/app.js": "app.js",
+}
 
 
 def now_ms():
@@ -118,11 +126,25 @@ def initialize_database():
               FOREIGN KEY(deck_id) REFERENCES decks(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS user_card_progress (
+              user_id TEXT NOT NULL,
+              card_id TEXT NOT NULL,
+              interval INTEGER NOT NULL DEFAULT 0,
+              ease REAL NOT NULL DEFAULT 2.5,
+              due_at INTEGER NOT NULL,
+              reviews INTEGER NOT NULL DEFAULT 0,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY(user_id, card_id),
+              FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+              FOREIGN KEY(card_id) REFERENCES cards(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_deck_access_user_id ON deck_access(user_id);
             CREATE INDEX IF NOT EXISTS idx_cards_deck_id ON cards(deck_id);
             CREATE INDEX IF NOT EXISTS idx_cards_due_at ON cards(due_at);
+            CREATE INDEX IF NOT EXISTS idx_user_card_progress_card_id ON user_card_progress(card_id);
             """
         )
 
@@ -201,6 +223,16 @@ def initialize_database():
                 (admin_id, timestamp),
             )
 
+        db.execute(
+            """
+            INSERT OR IGNORE INTO user_card_progress
+              (user_id, card_id, interval, ease, due_at, reviews, updated_at)
+            SELECT deck_access.user_id, cards.id, cards.interval, cards.ease, cards.due_at, cards.reviews, ?
+            FROM cards
+            JOIN deck_access ON deck_access.deck_id = cards.deck_id
+            """,
+            (timestamp,),
+        )
         db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now_ms(),))
 
 
@@ -255,12 +287,23 @@ def get_state(user):
             placeholders = ",".join("?" for _ in deck_ids)
             for row in db.execute(
                 f"""
-                SELECT id, deck_id, front, back, interval, ease, due_at, reviews
+                SELECT
+                  cards.id,
+                  cards.deck_id,
+                  cards.front,
+                  cards.back,
+                  COALESCE(user_card_progress.interval, cards.interval) AS interval,
+                  COALESCE(user_card_progress.ease, cards.ease) AS ease,
+                  COALESCE(user_card_progress.due_at, cards.due_at) AS due_at,
+                  COALESCE(user_card_progress.reviews, cards.reviews) AS reviews
                 FROM cards
+                LEFT JOIN user_card_progress
+                  ON user_card_progress.card_id = cards.id
+                  AND user_card_progress.user_id = ?
                 WHERE deck_id IN ({placeholders})
-                ORDER BY created_at DESC
+                ORDER BY cards.created_at DESC
                 """,
-                deck_ids,
+                [user["id"], *deck_ids],
             ):
                 cards_by_deck[row["deck_id"]].append(
                     {
@@ -273,15 +316,19 @@ def get_state(user):
                         "reviews": row["reviews"],
                     }
                 )
+            owner_deck_ids = [deck["id"] for deck in decks if deck["role"] == "owner"]
+            if not owner_deck_ids:
+                return {"user": user, "decks": decks}
+            owner_placeholders = ",".join("?" for _ in owner_deck_ids)
             for row in db.execute(
                 f"""
                 SELECT deck_access.deck_id, users.id, users.username, deck_access.role
                 FROM deck_access
                 JOIN users ON users.id = deck_access.user_id
-                WHERE deck_access.deck_id IN ({placeholders})
+                WHERE deck_access.deck_id IN ({owner_placeholders})
                 ORDER BY users.username
                 """,
-                deck_ids,
+                owner_deck_ids,
             ):
                 access_by_deck[row["deck_id"]].append(
                     {"userId": row["id"], "username": row["username"], "role": row["role"]}
@@ -342,36 +389,47 @@ def require_password(data):
     return password
 
 
+def require_username(data):
+    username = require_text(data, "username", 80)
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise ValueError("username must be 3-80 characters using letters, numbers, dots, dashes, or underscores")
+    return username
+
+
 class CardwellHandler(SimpleHTTPRequestHandler):
     server_version = "Cardwell/1.1"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(APP_DIR), **kwargs)
 
+    @property
+    def route(self):
+        return urlparse(self.path).path
+
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Content-Security-Policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
-        self.send_header("Cache-Control", "no-store" if self.path.startswith("/api/") else "public, max-age=60")
+        self.send_header("Cache-Control", "no-store" if self.route.startswith("/api/") else "public, max-age=60")
         super().end_headers()
 
     def do_GET(self):
-        if self.path == "/api/health":
+        if self.route == "/api/health":
             self.send_json({"ok": True})
             return
-        if self.path == "/api/me":
+        if self.route == "/api/me":
             user = self.require_user()
             if not user:
                 return
             self.send_json({"user": user})
             return
-        if self.path == "/api/state":
+        if self.route == "/api/state":
             user = self.require_user()
             if not user:
                 return
             self.send_json(get_state(user))
             return
-        if self.path == "/api/users":
+        if self.route == "/api/users":
             user = self.require_user()
             if not user:
                 return
@@ -380,7 +438,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
                 return
             self.list_users()
             return
-        if self.path == "/api/export":
+        if self.route == "/api/export":
             user = self.require_user()
             if not user:
                 return
@@ -392,45 +450,45 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        match = re.fullmatch(r"/api/decks/([^/]+)/access", self.path)
+        match = re.fullmatch(r"/api/decks/([^/]+)/access", self.route)
         if match:
             user = self.require_user()
             if not user:
                 return
             self.list_deck_access(user, match.group(1))
             return
-        super().do_GET()
+        self.serve_static()
 
     def do_POST(self):
         try:
-            if self.path == "/api/login":
+            if self.route == "/api/login":
                 self.login()
                 return
-            if self.path == "/api/logout":
+            if self.route == "/api/logout":
                 self.logout()
                 return
 
             user = self.require_user()
             if not user:
                 return
-            if self.path == "/api/decks":
+            if self.route == "/api/decks":
                 self.create_deck(user)
                 return
-            if self.path == "/api/import":
+            if self.route == "/api/import":
                 self.import_backup(user)
                 return
-            if self.path == "/api/users":
+            if self.route == "/api/users":
                 self.create_user(user)
                 return
-            match = re.fullmatch(r"/api/decks/([^/]+)/cards", self.path)
+            match = re.fullmatch(r"/api/decks/([^/]+)/cards", self.route)
             if match:
                 self.create_card(user, match.group(1))
                 return
-            match = re.fullmatch(r"/api/decks/([^/]+)/access", self.path)
+            match = re.fullmatch(r"/api/decks/([^/]+)/access", self.route)
             if match:
                 self.grant_deck_access(user, match.group(1))
                 return
-            match = re.fullmatch(r"/api/cards/([^/]+)/review", self.path)
+            match = re.fullmatch(r"/api/cards/([^/]+)/review", self.route)
             if match:
                 self.review_card(user, match.group(1))
                 return
@@ -443,11 +501,11 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             user = self.require_user()
             if not user:
                 return
-            match = re.fullmatch(r"/api/decks/([^/]+)", self.path)
+            match = re.fullmatch(r"/api/decks/([^/]+)", self.route)
             if match:
                 self.rename_deck(user, match.group(1))
                 return
-            match = re.fullmatch(r"/api/cards/([^/]+)", self.path)
+            match = re.fullmatch(r"/api/cards/([^/]+)", self.route)
             if match:
                 self.update_card(user, match.group(1))
                 return
@@ -459,19 +517,37 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         user = self.require_user()
         if not user:
             return
-        match = re.fullmatch(r"/api/decks/([^/]+)", self.path)
+        match = re.fullmatch(r"/api/decks/([^/]+)", self.route)
         if match:
             self.delete_deck(user, match.group(1))
             return
-        match = re.fullmatch(r"/api/cards/([^/]+)", self.path)
+        match = re.fullmatch(r"/api/cards/([^/]+)", self.route)
         if match:
             self.delete_card(user, match.group(1))
             return
-        match = re.fullmatch(r"/api/decks/([^/]+)/access/([^/]+)", self.path)
+        match = re.fullmatch(r"/api/decks/([^/]+)/access/([^/]+)", self.route)
         if match:
             self.revoke_deck_access(user, match.group(1), match.group(2))
             return
         self.send_error_json(HTTPStatus.NOT_FOUND, "Not found")
+
+    def serve_static(self):
+        filename = PUBLIC_FILES.get(self.route)
+        if not filename:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        path = APP_DIR / filename
+        content_types = {
+            ".css": "text/css; charset=utf-8",
+            ".html": "text/html; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+        }
+        body = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_types[path.suffix])
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def current_user(self):
         cookie = SimpleCookie(self.headers.get("Cookie"))
@@ -568,7 +644,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Only admins can create users")
             return
         data = read_json(self)
-        username = require_text(data, "username", 80)
+        username = require_username(data)
         password = require_password(data)
         is_admin = 1 if bool(data.get("isAdmin")) else 0
         user_id = new_id()
@@ -681,8 +757,18 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         rating = require_text(data, "rating")
         with connect() as db:
             card = db.execute(
-                "SELECT interval, ease, reviews FROM cards WHERE id = ?",
-                (card_id,),
+                """
+                SELECT
+                  COALESCE(user_card_progress.interval, cards.interval) AS interval,
+                  COALESCE(user_card_progress.ease, cards.ease) AS ease,
+                  COALESCE(user_card_progress.reviews, cards.reviews) AS reviews
+                FROM cards
+                LEFT JOIN user_card_progress
+                  ON user_card_progress.card_id = cards.id
+                  AND user_card_progress.user_id = ?
+                WHERE cards.id = ?
+                """,
+                (user["id"], card_id),
             ).fetchone()
             if not card:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "Card not found")
@@ -690,16 +776,24 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             next_values = apply_rating(card, rating)
             db.execute(
                 """
-                UPDATE cards
-                SET interval = ?, ease = ?, due_at = ?, reviews = ?
-                WHERE id = ?
+                INSERT INTO user_card_progress
+                  (user_id, card_id, interval, ease, due_at, reviews, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, card_id) DO UPDATE SET
+                  interval = excluded.interval,
+                  ease = excluded.ease,
+                  due_at = excluded.due_at,
+                  reviews = excluded.reviews,
+                  updated_at = excluded.updated_at
                 """,
                 (
+                    user["id"],
+                    card_id,
                     next_values["interval"],
                     next_values["ease"],
                     next_values["due_at"],
                     next_values["reviews"],
-                    card_id,
+                    now_ms(),
                 ),
             )
         self.send_json({"id": card_id, **next_values})
@@ -728,7 +822,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             self.send_error_json(HTTPStatus.FORBIDDEN, "Owner access required")
             return
         data = read_json(self)
-        username = require_text(data, "username", 80)
+        username = require_username(data)
         role = require_text(data, "role", 16)
         if role not in ROLE_ORDER:
             raise ValueError("role must be owner, editor, or viewer")
@@ -736,6 +830,9 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             target = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
             if not target:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "User not found")
+                return
+            if target["id"] == user["id"] and role != "owner":
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "Owners cannot downgrade their own access")
                 return
             db.execute(
                 """
@@ -792,6 +889,11 @@ class CardwellHandler(SimpleHTTPRequestHandler):
                     back = str(card.get("back", "")).strip()
                     if not front or not back:
                         continue
+                    card_id = card.get("id") if isinstance(card.get("id"), str) else new_id()
+                    interval = int(card.get("interval", 0))
+                    ease = float(card.get("ease", 2.5))
+                    due_at = int(card.get("dueAt", timestamp))
+                    reviews = int(card.get("reviews", 0))
                     db.execute(
                         """
                         INSERT OR REPLACE INTO cards
@@ -799,16 +901,24 @@ class CardwellHandler(SimpleHTTPRequestHandler):
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
-                            card.get("id") if isinstance(card.get("id"), str) else new_id(),
+                            card_id,
                             deck_id,
                             front,
                             back,
-                            int(card.get("interval", 0)),
-                            float(card.get("ease", 2.5)),
-                            int(card.get("dueAt", timestamp)),
-                            int(card.get("reviews", 0)),
+                            interval,
+                            ease,
+                            due_at,
+                            reviews,
                             timestamp,
                         ),
+                    )
+                    db.execute(
+                        """
+                        INSERT OR REPLACE INTO user_card_progress
+                          (user_id, card_id, interval, ease, due_at, reviews, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (user["id"], card_id, interval, ease, due_at, reviews, timestamp),
                     )
         self.send_json({"ok": True})
 

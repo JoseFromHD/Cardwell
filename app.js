@@ -333,6 +333,10 @@ function renderAccess() {
     accessList.innerHTML = '<p class="empty-state">Select a deck to manage access.</p>';
     return;
   }
+  if (!isOwner(deck)) {
+    accessList.innerHTML = '<p class="empty-state">Only deck owners can manage sharing.</p>';
+    return;
+  }
   deck.access.forEach((entry) => {
     const row = document.createElement("article");
     row.className = "access-row";
