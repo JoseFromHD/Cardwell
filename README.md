@@ -2,6 +2,38 @@
 
 Cardwell is a self-hosted flashcard app with a small server API, SQLite storage, and a Docker Compose setup.
 
+## Default Login
+
+The first admin account is created automatically when the database is initialized.
+
+```text
+Username: admin
+Password: change-me-now
+```
+
+Set a stronger password before first deploy:
+
+```bash
+CARDWELL_ADMIN_USERNAME=admin CARDWELL_ADMIN_PASSWORD='use-a-long-password' docker compose up --build
+```
+
+In Portainer, add these as stack environment variables:
+
+```text
+CARDWELL_ADMIN_USERNAME=admin
+CARDWELL_ADMIN_PASSWORD=use-a-long-password
+```
+
+If the SQLite database already exists, changing these environment variables will not reset the existing admin password. Create a new admin user from the in-app Users panel or restore/recreate the volume intentionally.
+
+If Cardwell is served only through HTTPS, set this too:
+
+```text
+CARDWELL_COOKIE_SECURE=true
+```
+
+Leave it as `false` for plain HTTP/LAN testing or the browser will not send the login cookie.
+
 ## Run With Docker
 
 ```bash
@@ -88,6 +120,16 @@ Local data is stored in `./data/cardwell.sqlite3` unless `CARDWELL_DATA_DIR` is 
 
 Use the in-app **Export** button to download a JSON backup. Use **Import** to restore a backup into the server database.
 
+## Access Control
+
+Cardwell supports three deck roles:
+
+- `owner`: rename/delete decks, manage sharing, and edit cards.
+- `editor`: rename decks and edit cards.
+- `viewer`: study cards only.
+
+Admins can create users. Deck owners can share decks with existing users from the Access panel.
+
 ## Scaling Notes
 
-This version is containerized and stateless at the web process level, with persistent data mounted separately. SQLite is excellent for a small self-hosted install, but it is still a single-writer database. For heavier multi-user use, the next step is to move storage to Postgres and run multiple app containers behind a reverse proxy such as Caddy, Traefik, or Nginx.
+This version is containerized and mostly stateless at the web process level, with persistent data mounted separately. Sessions, users, deck access, and cards live in SQLite. SQLite is excellent for a small self-hosted install, but it is still a single-writer database. For heavier multi-user use, the next step is to move storage to Postgres and run multiple app containers behind a reverse proxy such as Caddy, Traefik, or Nginx.

@@ -4,10 +4,40 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Cardwell</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
   </head>
   <body>
-    <main class="app-shell">
+    <main class="auth-shell" id="authShell" hidden>
+      <section class="auth-panel">
+        <div class="brand auth-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div>
+            <h1>Cardwell</h1>
+            <p>Private self-hosted study cards</p>
+          </div>
+        </div>
+
+        <form class="login-form" id="loginForm">
+          <h2>Sign in</h2>
+          <p id="loginMessage">Use your Cardwell account to continue.</p>
+          <label>
+            Username
+            <input id="loginUsername" autocomplete="username" required>
+          </label>
+          <label>
+            Password
+            <input id="loginPassword" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="primary" type="submit">Sign in</button>
+        </form>
+      </section>
+    </main>
+
+    <main class="app-shell" id="appShell" hidden>
       <aside class="sidebar" aria-label="Decks">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">
@@ -29,6 +59,17 @@
             <input id="importInput" type="file" accept="application/json">
           </label>
         </div>
+
+        <section class="account-panel">
+          <div>
+            <p class="eyebrow">Signed in</p>
+            <strong id="currentUserLabel">-</strong>
+          </div>
+          <div class="account-actions">
+            <button class="ghost" id="themeToggleButton" type="button">Dark</button>
+            <button class="ghost" id="logoutButton" type="button">Log out</button>
+          </div>
+        </section>
 
         <nav class="deck-list" id="deckList" aria-label="Deck list"></nav>
       </aside>
@@ -92,6 +133,56 @@
             </div>
           </form>
 
+          <section class="access-panel" id="accessPanel" aria-label="Deck access">
+            <div class="panel-heading">
+              <div>
+                <h3>Access</h3>
+                <p id="deckRoleLabel">No deck selected</p>
+              </div>
+            </div>
+            <form class="access-form" id="accessForm">
+              <label>
+                Username
+                <input id="shareUsernameInput" autocomplete="off" placeholder="e.g. maria">
+              </label>
+              <label>
+                Role
+                <select id="shareRoleInput">
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                  <option value="owner">Owner</option>
+                </select>
+              </label>
+              <button class="primary" type="submit">Share</button>
+            </form>
+            <div class="access-list" id="accessList"></div>
+          </section>
+
+          <section class="user-panel" id="userPanel" aria-label="Users" hidden>
+            <div class="panel-heading">
+              <div>
+                <h3>Users</h3>
+                <p>Create accounts for deck sharing</p>
+              </div>
+            </div>
+            <form class="user-form" id="userForm">
+              <label>
+                Username
+                <input id="newUsernameInput" autocomplete="off" required>
+              </label>
+              <label>
+                Password
+                <input id="newPasswordInput" type="password" autocomplete="new-password" required minlength="8">
+              </label>
+              <label class="checkbox-label">
+                <input id="newUserAdminInput" type="checkbox">
+                Admin
+              </label>
+              <button class="primary" type="submit">Create user</button>
+            </form>
+            <div class="user-list" id="userList"></div>
+          </section>
+
           <section class="cards-panel" aria-label="Cards">
             <div class="panel-heading">
               <h3>Cards</h3>
@@ -123,6 +214,6 @@
       </article>
     </template>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>
