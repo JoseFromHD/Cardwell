@@ -1,0 +1,31 @@
+services:
+  cardwell:
+    build:
+      context: https://github.com/JoseFromHD/Cardwell.git#main
+      dockerfile: Dockerfile
+    image: cardwell:latest
+    container_name: cardwell
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      CARDWELL_DATA_DIR: /data
+    volumes:
+      - cardwell_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json, urllib.request; json.load(urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=2))"
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  cardwell_data:
+    name: cardwell_data

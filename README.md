@@ -40,6 +40,12 @@ docker-compose.yml
 
 The stack builds the app from the included `Dockerfile`, exposes the app on port `8080`, and stores data in the named Docker volume `cardwell_data`.
 
+If Portainer reports `failed to read dockerfile: open Dockerfile: no such file or directory`, use one of these fixes:
+
+- Confirm the repository has `Dockerfile` at the repository root.
+- In Portainer's Git/repository deployment, set **Compose path** to `docker-compose.yml`.
+- If you are pasting a stack into Portainer's Web Editor instead of deploying from a repository, use `portainer-stack.yml`; it points the Docker build context directly at the GitHub repo.
+
 If port `8080` is already used on your host, edit the left side of the port mapping in `docker-compose.yml`:
 
 ```yaml
