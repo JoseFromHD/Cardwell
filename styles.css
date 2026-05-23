@@ -388,20 +388,51 @@ select:focus-visible,
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--panel), transparent 14%), color-mix(in srgb, var(--mint), transparent 14%)),
     repeating-linear-gradient(0deg, transparent, transparent 34px, rgba(23, 107, 135, 0.09) 35px);
+  backface-visibility: hidden;
   border-color: rgba(23, 107, 135, 0.18);
   color: var(--ink);
+  display: grid;
   min-height: 170px;
   padding: 24px;
+  perspective: 1000px;
+  position: relative;
+  transform-style: preserve-3d;
   text-align: center;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1);
   width: 100%;
 }
 
-#studyText {
+.study-card button.flipped {
+  border-color: color-mix(in srgb, var(--accent), transparent 45%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent), transparent 74%);
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  align-items: center;
+  backface-visibility: hidden;
   display: block;
   font-size: clamp(1.3rem, 2.2vw, 2rem);
   font-weight: 750;
+  inset: 0;
+  justify-content: center;
   line-height: 1.25;
   overflow-wrap: anywhere;
+  padding: 24px;
+  position: absolute;
+}
+
+.card-back {
+  transform: rotateY(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-card button {
+    transition: none;
+  }
 }
 
 .rating-actions {

@@ -35,7 +35,8 @@ const studyDirectionInput = document.querySelector("#studyDirectionInput");
 const studyShuffleInput = document.querySelector("#studyShuffleInput");
 const studyCard = document.querySelector("#studyCard");
 const studyLabel = document.querySelector("#studyLabel");
-const studyText = document.querySelector("#studyText");
+const studyFrontText = document.querySelector("#studyFrontText");
+const studyBackText = document.querySelector("#studyBackText");
 const flipButton = document.querySelector("#flipButton");
 const learnForm = document.querySelector("#learnForm");
 const learnAnswerInput = document.querySelector("#learnAnswerInput");
@@ -228,7 +229,8 @@ async function loadUsers() {
 
 function renderFatalError(error) {
   deckTitle.textContent = "Unable to load Cardwell";
-  studyText.textContent = "The server is not responding. Check the container logs and refresh.";
+  studyFrontText.textContent = "The server is not responding. Check the container logs and refresh.";
+  studyBackText.textContent = "The server is not responding. Check the container logs and refresh.";
   cardList.innerHTML = `<p class="empty-state">${escapeHtml(error.message)}</p>`;
 }
 
@@ -291,7 +293,9 @@ function renderDeckWorkspace() {
     statDue.textContent = "0";
     statMastered.textContent = "0";
     studyLabel.textContent = "Question";
-    studyText.textContent = "Create a deck to begin.";
+    studyFrontText.textContent = "Create a deck to begin.";
+    studyBackText.textContent = "Create a deck to begin.";
+    flipButton.classList.remove("flipped");
     deckRoleLabel.textContent = "No deck selected";
     flipButton.disabled = true;
     studyCard.hidden = false;
@@ -363,7 +367,9 @@ function renderStudyCard(deck) {
 
   if (!card) {
     studyLabel.textContent = "Question";
-    studyText.textContent = "Add a card to begin.";
+    studyFrontText.textContent = "Add a card to begin.";
+    studyBackText.textContent = "Add a card to begin.";
+    flipButton.classList.remove("flipped");
     flipButton.disabled = true;
     learnForm.querySelectorAll("input, button").forEach((control) => {
       control.disabled = true;
@@ -377,7 +383,9 @@ function renderStudyCard(deck) {
     control.disabled = false;
   });
   studyLabel.textContent = showingAnswer ? "Answer" : studyMode === "learn" ? "Learn" : "Question";
-  studyText.textContent = showingAnswer ? pair.answer : pair.prompt;
+  studyFrontText.textContent = pair.prompt;
+  studyBackText.textContent = pair.answer;
+  flipButton.classList.toggle("flipped", studyMode === "cards" && showingAnswer);
 }
 
 function changeStudyMode(event) {
