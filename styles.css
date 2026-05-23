@@ -389,7 +389,10 @@ select:focus-visible,
     linear-gradient(145deg, color-mix(in srgb, var(--panel), transparent 14%), color-mix(in srgb, var(--mint), transparent 14%)),
     repeating-linear-gradient(0deg, transparent, transparent 34px, rgba(23, 107, 135, 0.09) 35px);
   backface-visibility: hidden;
-  border-color: rgba(23, 107, 135, 0.18);
+  border: 2px solid color-mix(in srgb, var(--accent), transparent 42%);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--panel), transparent 12%),
+    0 10px 24px rgba(23, 107, 135, 0.12);
   color: var(--ink);
   min-height: 170px;
   padding: 24px;
@@ -405,8 +408,10 @@ select:focus-visible,
 }
 
 .study-card button.flipped {
-  border-color: color-mix(in srgb, var(--accent), transparent 45%);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent), transparent 74%);
+  border-color: color-mix(in srgb, var(--accent), transparent 24%);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--panel), transparent 14%),
+    0 14px 30px rgba(23, 107, 135, 0.16);
   transform: rotateY(180deg);
 }
 
@@ -435,17 +440,37 @@ select:focus-visible,
   }
 }
 
-.rating-actions {
+.rating-actions,
+.drill-actions {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.rating-actions:not([hidden]) {
+.rating-actions:not([hidden]),
+.drill-actions:not([hidden]) {
   display: grid;
 }
 
-.rating-actions button {
+.rating-actions button,
+.drill-actions button {
   background: var(--panel-soft);
   border-color: var(--line);
+}
+
+.drill-actions {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(10rem, auto);
+}
+
+.drill-actions p {
+  color: var(--muted);
+  font-weight: 800;
+  margin: 0;
+}
+
+.drill-actions .primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: white;
 }
 
 .learn-form {
@@ -835,7 +860,8 @@ select {
   }
 
   .stats-grid,
-  .rating-actions:not([hidden]) {
+  .rating-actions:not([hidden]),
+  .drill-actions:not([hidden]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

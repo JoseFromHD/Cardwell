@@ -13,6 +13,8 @@ let learnFeedbackMessage = "";
 let testSession = null;
 let matchSession = null;
 let matchTimerId = null;
+let drillDeck = [];
+let drillIndex = 0;
 
 const authShell = document.querySelector("#authShell");
 const appShell = document.querySelector("#appShell");
@@ -42,6 +44,9 @@ const learnForm = document.querySelector("#learnForm");
 const learnAnswerInput = document.querySelector("#learnAnswerInput");
 const learnFeedback = document.querySelector("#learnFeedback");
 const ratingActions = document.querySelector("#ratingActions");
+const drillActions = document.querySelector("#drillActions");
+const drillProgress = document.querySelector("#drillProgress");
+const nextDrillButton = document.querySelector("#nextDrillButton");
 const testPanel = document.querySelector("#testPanel");
 const testSummary = document.querySelector("#testSummary");
 const testList = document.querySelector("#testList");
@@ -93,6 +98,7 @@ studyShuffleInput.addEventListener("change", resetStudyModeState);
 flipButton.addEventListener("click", flipStudyCard);
 learnForm.addEventListener("submit", submitLearnAnswer);
 ratingActions.addEventListener("click", rateCard);
+nextDrillButton.addEventListener("click", nextDrillCard);
 startTestButton.addEventListener("click", startTestMode);
 submitTestButton.addEventListener("click", scoreTestMode);
 startMatchButton.addEventListener("click", startMatchMode);
@@ -301,6 +307,7 @@ function renderDeckWorkspace() {
     studyCard.hidden = false;
     learnForm.hidden = true;
     ratingActions.hidden = true;
+    drillActions.hidden = true;
     testPanel.hidden = true;
     matchPanel.hidden = true;
     renderCards();
@@ -325,13 +332,14 @@ function renderStudySurface(deck) {
   studyModeTabs.querySelectorAll("button").forEach((button) => {
     button.classList.toggle("active", button.dataset.studyMode === studyMode);
   });
-  const needsDirection = ["cards", "learn", "test", "match"].includes(studyMode);
+  const needsDirection = ["cards", "drill", "learn", "test", "match"].includes(studyMode);
   studyOptions.hidden = !needsDirection;
-  studyCard.hidden = !["cards", "learn"].includes(studyMode);
+  studyCard.hidden = !["cards", "drill", "learn"].includes(studyMode);
   learnForm.hidden = studyMode !== "learn";
   testPanel.hidden = studyMode !== "test";
   matchPanel.hidden = studyMode !== "match";
   ratingActions.hidden = true;
+  drillActions.hidden = true;
 
   if (studyMode === "test") {
     renderTestMode(deck);
@@ -340,6 +348,12 @@ function renderStudySurface(deck) {
 
   if (studyMode === "match") {
     renderMatchMode(deck);
+    return;
+  }
+
+  if (studyMode === "drill") {
+    chooseDrillCard(deck);
+    renderStudyCard(deck);
     return;
   }
 
@@ -363,6 +377,7 @@ function chooseStudyCard(deck) {
 function renderStudyCard(deck) {
   const card = deck.cards.find((item) => item.id === currentStudyCardId);
   ratingActions.hidden = studyMode !== "cards" || !showingAnswer || !card;
+  drillActions.hidden = studyMode !== "drill" || !showingAnswer || !card;
   learnFeedback.textContent = learnFeedbackMessage;
 
   if (!card) {
@@ -371,6 +386,7 @@ function renderStudyCard(deck) {
     studyBackText.textContent = "Add a card to begin.";
     flipButton.classList.remove("flipped");
     flipButton.disabled = true;
+    drillProgress.textContent = "0 / 0";
     learnForm.querySelectorAll("input, button").forEach((control) => {
       control.disabled = true;
     });
@@ -385,7 +401,42 @@ function renderStudyCard(deck) {
   studyLabel.textContent = showingAnswer ? "Answer" : studyMode === "learn" ? "Learn" : "Question";
   studyFrontText.textContent = pair.prompt;
   studyBackText.textContent = pair.answer;
-  flipButton.classList.toggle("flipped", studyMode === "cards" && showingAnswer);
+  flipButton.classList.toggle("flipped", ["cards", "drill"].includes(studyMode) && showingAnswer);
+  if (studyMode === "drill") {
+    drillProgress.textContent = `${Math.min(drillIndex + 1, drillDeck.length)} / ${drillDeck.length}`;
+    nextDrillButton.textContent = drillIndex >= drillDeck.length - 1 ? "Restart" : "Next card";
+  }
+}
+
+function chooseDrillCard(deck) {
+  if (!deck.cards.length) {
+    currentStudyCardId = null;
+    drillDeck = [];
+    drillIndex = 0;
+    return;
+  }
+
+  const ids = deck.cards.map((card) => card.id);
+  const deckChanged = drillDeck.length !== ids.length || drillDeck.some((id) => !ids.includes(id));
+  if (!drillDeck.length || deckChanged) {
+    drillDeck = shuffle(ids);
+    drillIndex = 0;
+  }
+  currentStudyCardId = drillDeck[drillIndex] ?? null;
+}
+
+function nextDrillCard() {
+  const deck = getActiveDeck();
+  if (!deck?.cards.length) return;
+  if (drillIndex >= drillDeck.length - 1) {
+    drillDeck = shuffle(deck.cards.map((card) => card.id));
+    drillIndex = 0;
+  } else {
+    drillIndex += 1;
+  }
+  currentStudyCardId = drillDeck[drillIndex] ?? null;
+  showingAnswer = false;
+  renderStudySurface(deck);
 }
 
 function changeStudyMode(event) {
@@ -402,6 +453,8 @@ function resetStudyModeState() {
   testSession = null;
   stopMatchTimer();
   matchSession = null;
+  drillDeck = [];
+  drillIndex = 0;
   render();
 }
 
@@ -1016,10 +1069,12 @@ function resetStudy() {
   testSession = null;
   stopMatchTimer();
   matchSession = null;
+  drillDeck = [];
+  drillIndex = 0;
 }
 
 function flipStudyCard() {
-  if (studyMode !== "cards") return;
+  if (!["cards", "drill"].includes(studyMode)) return;
   const deck = getActiveDeck();
   if (!deck || !currentStudyCardId) return;
   showingAnswer = !showingAnswer;

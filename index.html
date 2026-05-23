@@ -104,6 +104,7 @@
         <section class="study-panel" aria-label="Study">
           <div class="study-mode-tabs" id="studyModeTabs" role="tablist" aria-label="Study modes">
             <button class="active" data-study-mode="cards" type="button">Cards</button>
+            <button data-study-mode="drill" type="button">Drill</button>
             <button data-study-mode="learn" type="button">Learn</button>
             <button data-study-mode="test" type="button">Test</button>
             <button data-study-mode="match" type="button">Match</button>
@@ -141,6 +142,10 @@
             <button data-rating="hard" type="button">Hard</button>
             <button data-rating="good" type="button">Good</button>
             <button data-rating="easy" type="button">Easy</button>
+          </div>
+          <div class="drill-actions" id="drillActions" hidden>
+            <p id="drillProgress">0 / 0</p>
+            <button class="primary" id="nextDrillButton" type="button">Next card</button>
           </div>
           <section class="test-panel" id="testPanel" hidden>
             <div class="mode-toolbar">
@@ -273,6 +278,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
   </body>
 </html>

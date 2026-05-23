@@ -115,6 +115,7 @@ Local data is stored in `./data/cardwell.sqlite3` unless `CARDWELL_DATA_DIR` is 
 ## Study Modes
 
 - **Cards**: flip through due cards and rate them with spaced repetition.
+- **Drill**: randomize the active deck, flip each card, and move through one card at a time.
 - **Learn**: type answers with configurable front-to-back or back-to-front prompts.
 - **Test**: generate a mixed written and multiple-choice practice test from the active deck.
 - **Match**: race a timer to pair prompts with answers.
