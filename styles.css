@@ -391,7 +391,6 @@ select:focus-visible,
   backface-visibility: hidden;
   border-color: rgba(23, 107, 135, 0.18);
   color: var(--ink);
-  display: grid;
   min-height: 170px;
   padding: 24px;
   perspective: 1000px;
@@ -414,7 +413,7 @@ select:focus-visible,
 .card-face {
   align-items: center;
   backface-visibility: hidden;
-  display: block;
+  display: flex;
   font-size: clamp(1.3rem, 2.2vw, 2rem);
   font-weight: 750;
   inset: 0;
@@ -423,6 +422,7 @@ select:focus-visible,
   overflow-wrap: anywhere;
   padding: 24px;
   position: absolute;
+  width: 100%;
 }
 
 .card-back {
