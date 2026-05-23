@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Cardwell</title>
-    <link rel="stylesheet" href="styles.css?v=4">
+    <link rel="stylesheet" href="styles.css?v=5">
   </head>
   <body>
     <main class="auth-shell" id="authShell" hidden>
@@ -102,18 +102,62 @@
         </section>
 
         <section class="study-panel" aria-label="Study">
+          <div class="study-mode-tabs" id="studyModeTabs" role="tablist" aria-label="Study modes">
+            <button class="active" data-study-mode="cards" type="button">Cards</button>
+            <button data-study-mode="learn" type="button">Learn</button>
+            <button data-study-mode="test" type="button">Test</button>
+            <button data-study-mode="match" type="button">Match</button>
+          </div>
+          <div class="study-options" id="studyOptions">
+            <label>
+              Prompt
+              <select id="studyDirectionInput">
+                <option value="front">Front to back</option>
+                <option value="back">Back to front</option>
+              </select>
+            </label>
+            <label class="checkbox-label">
+              <input id="studyShuffleInput" type="checkbox">
+              Shuffle
+            </label>
+          </div>
           <div class="study-card" id="studyCard">
             <p id="studyLabel">Question</p>
             <button id="flipButton" type="button">
               <span id="studyText">Add a card to begin.</span>
             </button>
           </div>
+          <form class="learn-form" id="learnForm" hidden>
+            <label>
+              Answer
+              <input id="learnAnswerInput" autocomplete="off" placeholder="Type the answer">
+            </label>
+            <button class="primary" type="submit">Check</button>
+            <p id="learnFeedback" class="mode-feedback"></p>
+          </form>
           <div class="rating-actions" id="ratingActions" hidden>
             <button data-rating="again" type="button">Again</button>
             <button data-rating="hard" type="button">Hard</button>
             <button data-rating="good" type="button">Good</button>
             <button data-rating="easy" type="button">Easy</button>
           </div>
+          <section class="test-panel" id="testPanel" hidden>
+            <div class="mode-toolbar">
+              <p id="testSummary">Generate a mixed practice test from this deck.</p>
+              <div>
+                <button class="primary" id="startTestButton" type="button">Start test</button>
+                <button class="ghost" id="submitTestButton" type="button" hidden>Score</button>
+              </div>
+            </div>
+            <div class="test-list" id="testList"></div>
+          </section>
+          <section class="match-panel" id="matchPanel" hidden>
+            <div class="mode-toolbar">
+              <p id="matchSummary">Match terms and answers as quickly as you can.</p>
+              <button class="primary" id="startMatchButton" type="button">Start match</button>
+            </div>
+            <div class="match-grid" id="matchGrid"></div>
+          </section>
         </section>
 
         <section class="editor-grid">
@@ -228,6 +272,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
   </body>
 </html>

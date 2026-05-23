@@ -112,6 +112,13 @@ http://localhost:8080
 
 Local data is stored in `./data/cardwell.sqlite3` unless `CARDWELL_DATA_DIR` is set.
 
+## Study Modes
+
+- **Cards**: flip through due cards and rate them with spaced repetition.
+- **Learn**: type answers with configurable front-to-back or back-to-front prompts.
+- **Test**: generate a mixed written and multiple-choice practice test from the active deck.
+- **Match**: race a timer to pair prompts with answers.
+
 ## Backups
 
 Use the in-app **Export** button to download a JSON backup. Use **Import** to restore a backup into the server database.

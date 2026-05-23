@@ -340,6 +340,42 @@ select:focus-visible,
   padding: 20px;
 }
 
+.study-mode-tabs,
+.study-options,
+.mode-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.study-mode-tabs {
+  flex-wrap: wrap;
+}
+
+.study-mode-tabs button {
+  background: var(--panel-soft);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.study-mode-tabs button.active {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  border-color: color-mix(in srgb, var(--accent), transparent 60%);
+  color: var(--accent-strong);
+}
+
+.study-options {
+  flex-wrap: wrap;
+}
+
+.study-options label {
+  min-width: min(220px, 100%);
+}
+
+.study-options .checkbox-label {
+  min-height: 42px;
+}
+
 .study-card p {
   color: var(--muted);
   font-size: 0.85rem;
@@ -379,6 +415,125 @@ select:focus-visible,
 .rating-actions button {
   background: var(--panel-soft);
   border-color: var(--line);
+}
+
+.learn-form {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.learn-form .mode-feedback {
+  grid-column: 1 / -1;
+}
+
+.mode-feedback {
+  color: var(--muted);
+  font-weight: 700;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.test-panel,
+.match-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.mode-toolbar {
+  justify-content: space-between;
+}
+
+.mode-toolbar p {
+  color: var(--muted);
+  font-weight: 700;
+  margin: 0;
+}
+
+.mode-toolbar div {
+  display: flex;
+  gap: 8px;
+}
+
+.test-list {
+  display: grid;
+  gap: 10px;
+}
+
+.test-question {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.test-question.correct {
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+}
+
+.test-question.incorrect {
+  border-color: color-mix(in srgb, var(--rose), transparent 58%);
+}
+
+.test-question h4,
+.test-question p {
+  margin: 0;
+}
+
+.test-question p {
+  overflow-wrap: anywhere;
+}
+
+.choice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.choice-list label {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: flex;
+  flex-direction: row;
+  font-weight: 650;
+  padding: 10px;
+}
+
+.choice-list input {
+  width: auto;
+}
+
+.match-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.match-tile {
+  background: var(--field);
+  border-color: var(--line);
+  color: var(--ink);
+  min-height: 76px;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  text-align: center;
+}
+
+.match-tile.selected {
+  background: color-mix(in srgb, var(--accent), transparent 82%);
+  border-color: var(--accent);
+}
+
+.match-tile.matched {
+  background: var(--mint);
+  border-color: color-mix(in srgb, var(--accent), transparent 58%);
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 .editor-grid {
@@ -658,16 +813,19 @@ select {
   .access-row,
   .user-row,
   .credential-box,
+  .mode-toolbar,
   .topbar-actions,
   .form-actions,
-  .password-row {
+  .password-row,
+  .learn-form {
     align-items: stretch;
     flex-direction: column;
   }
 
   .card-row,
   .user-row,
-  .password-row {
+  .password-row,
+  .learn-form {
     display: flex;
   }
 

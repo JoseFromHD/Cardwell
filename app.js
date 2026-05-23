@@ -8,6 +8,11 @@ let editingCardId = null;
 let currentStudyCardId = null;
 let showingAnswer = false;
 let lastGeneratedCredential = null;
+let studyMode = "cards";
+let learnFeedbackMessage = "";
+let testSession = null;
+let matchSession = null;
+let matchTimerId = null;
 
 const authShell = document.querySelector("#authShell");
 const appShell = document.querySelector("#appShell");
@@ -24,10 +29,27 @@ const collectionSummary = document.querySelector("#collectionSummary");
 const statCards = document.querySelector("#statCards");
 const statDue = document.querySelector("#statDue");
 const statMastered = document.querySelector("#statMastered");
+const studyModeTabs = document.querySelector("#studyModeTabs");
+const studyOptions = document.querySelector("#studyOptions");
+const studyDirectionInput = document.querySelector("#studyDirectionInput");
+const studyShuffleInput = document.querySelector("#studyShuffleInput");
+const studyCard = document.querySelector("#studyCard");
 const studyLabel = document.querySelector("#studyLabel");
 const studyText = document.querySelector("#studyText");
 const flipButton = document.querySelector("#flipButton");
+const learnForm = document.querySelector("#learnForm");
+const learnAnswerInput = document.querySelector("#learnAnswerInput");
+const learnFeedback = document.querySelector("#learnFeedback");
 const ratingActions = document.querySelector("#ratingActions");
+const testPanel = document.querySelector("#testPanel");
+const testSummary = document.querySelector("#testSummary");
+const testList = document.querySelector("#testList");
+const startTestButton = document.querySelector("#startTestButton");
+const submitTestButton = document.querySelector("#submitTestButton");
+const matchPanel = document.querySelector("#matchPanel");
+const matchSummary = document.querySelector("#matchSummary");
+const matchGrid = document.querySelector("#matchGrid");
+const startMatchButton = document.querySelector("#startMatchButton");
 const cardForm = document.querySelector("#cardForm");
 const frontInput = document.querySelector("#frontInput");
 const backInput = document.querySelector("#backInput");
@@ -64,8 +86,16 @@ document.querySelector("#importInput").addEventListener("change", importBackup);
 loginForm.addEventListener("submit", login);
 logoutButton.addEventListener("click", logout);
 themeToggleButton.addEventListener("click", toggleTheme);
+studyModeTabs.addEventListener("click", changeStudyMode);
+studyDirectionInput.addEventListener("change", resetStudyModeState);
+studyShuffleInput.addEventListener("change", resetStudyModeState);
 flipButton.addEventListener("click", flipStudyCard);
+learnForm.addEventListener("submit", submitLearnAnswer);
 ratingActions.addEventListener("click", rateCard);
+startTestButton.addEventListener("click", startTestMode);
+submitTestButton.addEventListener("click", scoreTestMode);
+startMatchButton.addEventListener("click", startMatchMode);
+matchGrid.addEventListener("click", selectMatchTile);
 cardForm.addEventListener("submit", saveCard);
 cancelEditButton.addEventListener("click", resetForm);
 searchInput.addEventListener("input", renderCards);
@@ -264,7 +294,11 @@ function renderDeckWorkspace() {
     studyText.textContent = "Create a deck to begin.";
     deckRoleLabel.textContent = "No deck selected";
     flipButton.disabled = true;
+    studyCard.hidden = false;
+    learnForm.hidden = true;
     ratingActions.hidden = true;
+    testPanel.hidden = true;
+    matchPanel.hidden = true;
     renderCards();
     renderAccess();
     return;
@@ -278,10 +312,35 @@ function renderDeckWorkspace() {
   statDue.textContent = due.length;
   statMastered.textContent = mastered.length;
   deckRoleLabel.textContent = `Your role: ${deck.role}`;
-  chooseStudyCard(deck);
-  renderStudyCard(deck);
+  renderStudySurface(deck);
   renderCards();
   renderAccess();
+}
+
+function renderStudySurface(deck) {
+  studyModeTabs.querySelectorAll("button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.studyMode === studyMode);
+  });
+  const needsDirection = ["cards", "learn", "test", "match"].includes(studyMode);
+  studyOptions.hidden = !needsDirection;
+  studyCard.hidden = !["cards", "learn"].includes(studyMode);
+  learnForm.hidden = studyMode !== "learn";
+  testPanel.hidden = studyMode !== "test";
+  matchPanel.hidden = studyMode !== "match";
+  ratingActions.hidden = true;
+
+  if (studyMode === "test") {
+    renderTestMode(deck);
+    return;
+  }
+
+  if (studyMode === "match") {
+    renderMatchMode(deck);
+    return;
+  }
+
+  chooseStudyCard(deck);
+  renderStudyCard(deck);
 }
 
 function chooseStudyCard(deck) {
@@ -290,24 +349,341 @@ function chooseStudyCard(deck) {
   const dueCards = deck.cards
     .filter((card) => card.dueAt <= now)
     .sort((a, b) => a.dueAt - b.dueAt);
-  currentStudyCardId = dueCards[0]?.id ?? deck.cards[0]?.id ?? null;
+  const candidates = dueCards.length ? dueCards : deck.cards;
+  currentStudyCardId = studyShuffleInput.checked
+    ? sample(candidates)?.id ?? null
+    : candidates[0]?.id ?? null;
   showingAnswer = false;
 }
 
 function renderStudyCard(deck) {
   const card = deck.cards.find((item) => item.id === currentStudyCardId);
-  ratingActions.hidden = !showingAnswer || !card;
+  ratingActions.hidden = studyMode !== "cards" || !showingAnswer || !card;
+  learnFeedback.textContent = learnFeedbackMessage;
 
   if (!card) {
     studyLabel.textContent = "Question";
     studyText.textContent = "Add a card to begin.";
     flipButton.disabled = true;
+    learnForm.querySelectorAll("input, button").forEach((control) => {
+      control.disabled = true;
+    });
     return;
   }
 
+  const pair = getStudyPair(card);
   flipButton.disabled = false;
-  studyLabel.textContent = showingAnswer ? "Answer" : "Question";
-  studyText.textContent = showingAnswer ? card.back : card.front;
+  learnForm.querySelectorAll("input, button").forEach((control) => {
+    control.disabled = false;
+  });
+  studyLabel.textContent = showingAnswer ? "Answer" : studyMode === "learn" ? "Learn" : "Question";
+  studyText.textContent = showingAnswer ? pair.answer : pair.prompt;
+}
+
+function changeStudyMode(event) {
+  const button = event.target.closest("button[data-study-mode]");
+  if (!button) return;
+  studyMode = button.dataset.studyMode;
+  resetStudyModeState();
+}
+
+function resetStudyModeState() {
+  resetStudy();
+  learnFeedbackMessage = "";
+  learnAnswerInput.value = "";
+  testSession = null;
+  stopMatchTimer();
+  matchSession = null;
+  render();
+}
+
+function getStudyPair(card) {
+  if (studyDirectionInput.value === "back") {
+    return { prompt: card.back, answer: card.front };
+  }
+  return { prompt: card.front, answer: card.back };
+}
+
+function getPracticeCards(deck, limit = 10) {
+  const cards = studyShuffleInput.checked ? shuffle(deck.cards) : [...deck.cards];
+  return cards.slice(0, limit);
+}
+
+function sample(items) {
+  if (!items.length) return null;
+  const [value] = crypto.getRandomValues(new Uint32Array(1));
+  return items[value % items.length];
+}
+
+function shuffle(items) {
+  const copy = [...items];
+  const bytes = new Uint32Array(copy.length);
+  crypto.getRandomValues(bytes);
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = bytes[index] % (index + 1);
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+}
+
+function normalizeAnswer(value) {
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isAnswerCorrect(answer, expected) {
+  return normalizeAnswer(answer) === normalizeAnswer(expected);
+}
+
+async function submitLearnAnswer(event) {
+  event.preventDefault();
+  const deck = getActiveDeck();
+  const card = deck?.cards.find((item) => item.id === currentStudyCardId);
+  if (!card) return;
+
+  const pair = getStudyPair(card);
+  const answer = learnAnswerInput.value.trim();
+  if (!answer) return;
+
+  const correct = isAnswerCorrect(answer, pair.answer);
+  learnFeedbackMessage = correct
+    ? "Correct. Cardwell will space this card out."
+    : `Not quite. Answer: ${pair.answer}`;
+
+  try {
+    await api(`/api/cards/${card.id}/review`, {
+      method: "POST",
+      body: JSON.stringify({ rating: correct ? "good" : "again" })
+    });
+    learnAnswerInput.value = "";
+    currentStudyCardId = null;
+    showingAnswer = false;
+    await loadState(deck.id);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function startTestMode() {
+  const deck = getActiveDeck();
+  if (!deck?.cards.length) return;
+  testSession = {
+    scored: false,
+    questions: buildTestQuestions(deck)
+  };
+  renderTestMode(deck);
+}
+
+function buildTestQuestions(deck) {
+  return getPracticeCards(deck, 10).map((card, index) => {
+    const pair = getStudyPair(card);
+    const type = deck.cards.length >= 4 && index % 2 === 0 ? "choice" : "written";
+    const distractors = shuffle(deck.cards)
+      .filter((candidate) => candidate.id !== card.id)
+      .map((candidate) => getStudyPair(candidate).answer)
+      .filter((answer, answerIndex, answers) => answers.indexOf(answer) === answerIndex)
+      .slice(0, 3);
+    return {
+      id: card.id,
+      type,
+      prompt: pair.prompt,
+      answer: pair.answer,
+      choices: type === "choice" ? shuffle([pair.answer, ...distractors]) : [],
+      response: "",
+      correct: false
+    };
+  });
+}
+
+function renderTestMode(deck) {
+  testList.replaceChildren();
+  startTestButton.disabled = !deck.cards.length;
+  submitTestButton.hidden = !testSession || testSession.scored;
+
+  if (!testSession) {
+    testSummary.textContent = deck.cards.length
+      ? `Generate up to ${Math.min(deck.cards.length, 10)} written and multiple-choice questions.`
+      : "Add cards to generate a test.";
+    return;
+  }
+
+  if (testSession.scored) {
+    const correct = testSession.questions.filter((question) => question.correct).length;
+    testSummary.textContent = `Score: ${correct}/${testSession.questions.length}`;
+    startTestButton.textContent = "New test";
+  } else {
+    testSummary.textContent = `${testSession.questions.length} questions ready.`;
+    startTestButton.textContent = "Restart";
+  }
+
+  testSession.questions.forEach((question, index) => {
+    const item = document.createElement("article");
+    const title = document.createElement("h4");
+    const prompt = document.createElement("p");
+
+    item.className = `test-question ${testSession.scored ? (question.correct ? "correct" : "incorrect") : ""}`;
+    title.textContent = `${index + 1}. ${question.type === "choice" ? "Choose the answer" : "Write the answer"}`;
+    prompt.textContent = question.prompt;
+    item.append(title, prompt);
+
+    if (question.type === "choice") {
+      const group = document.createElement("div");
+      group.className = "choice-list";
+      question.choices.forEach((choice) => {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = `test-${index}`;
+        input.value = choice;
+        input.checked = question.response === choice;
+        input.disabled = testSession.scored;
+        label.append(input, document.createTextNode(choice));
+        group.append(label);
+      });
+      item.append(group);
+    } else {
+      const input = document.createElement("input");
+      input.dataset.testIndex = index;
+      input.placeholder = "Type your answer";
+      input.value = question.response;
+      input.disabled = testSession.scored;
+      item.append(input);
+    }
+
+    if (testSession.scored) {
+      const answer = document.createElement("p");
+      answer.className = "mode-feedback";
+      answer.textContent = question.correct ? "Correct" : `Answer: ${question.answer}`;
+      item.append(answer);
+    }
+
+    testList.append(item);
+  });
+}
+
+function scoreTestMode() {
+  if (!testSession) return;
+
+  testSession.questions.forEach((question, index) => {
+    if (question.type === "choice") {
+      const checked = testList.querySelector(`input[name="test-${index}"]:checked`);
+      question.response = checked?.value ?? "";
+    } else {
+      const input = testList.querySelector(`input[data-test-index="${index}"]`);
+      question.response = input?.value ?? "";
+    }
+    question.correct = isAnswerCorrect(question.response, question.answer);
+  });
+  testSession.scored = true;
+  renderTestMode(getActiveDeck());
+}
+
+function startMatchMode() {
+  const deck = getActiveDeck();
+  if (!deck?.cards.length) return;
+  const cards = getPracticeCards(deck, 6);
+  matchSession = {
+    startedAt: Date.now(),
+    completedAt: null,
+    selectedId: null,
+    matchedPairs: new Set(),
+    tiles: shuffle(cards.flatMap((card) => {
+      const pair = getStudyPair(card);
+      return [
+        { id: `${card.id}:prompt`, pairId: card.id, side: "prompt", text: pair.prompt },
+        { id: `${card.id}:answer`, pairId: card.id, side: "answer", text: pair.answer }
+      ];
+    }))
+  };
+  startMatchTimer();
+  renderMatchMode(deck);
+}
+
+function renderMatchMode(deck) {
+  matchGrid.replaceChildren();
+  startMatchButton.disabled = !deck.cards.length;
+
+  if (!matchSession) {
+    matchSummary.textContent = deck.cards.length
+      ? `Match ${Math.min(deck.cards.length, 6)} pairs. Smaller decks make faster rounds.`
+      : "Add cards to start Match.";
+    return;
+  }
+
+  const elapsed = getMatchElapsedSeconds();
+  if (matchSession.completedAt) {
+    matchSummary.textContent = `Complete in ${elapsed}s.`;
+    startMatchButton.textContent = "Play again";
+  } else {
+    matchSummary.textContent = `Time: ${elapsed}s · ${matchSession.matchedPairs.size}/${matchSession.tiles.length / 2} matched`;
+    startMatchButton.textContent = "Restart";
+  }
+
+  matchSession.tiles.forEach((tile) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "match-tile";
+    button.dataset.tileId = tile.id;
+    button.textContent = tile.text;
+    button.disabled = matchSession.matchedPairs.has(tile.pairId);
+    button.classList.toggle("selected", matchSession.selectedId === tile.id);
+    button.classList.toggle("matched", matchSession.matchedPairs.has(tile.pairId));
+    matchGrid.append(button);
+  });
+}
+
+function selectMatchTile(event) {
+  const button = event.target.closest("button[data-tile-id]");
+  if (!button || !matchSession || matchSession.completedAt) return;
+  const tile = matchSession.tiles.find((candidate) => candidate.id === button.dataset.tileId);
+  if (!tile || matchSession.matchedPairs.has(tile.pairId)) return;
+
+  if (!matchSession.selectedId) {
+    matchSession.selectedId = tile.id;
+    renderMatchMode(getActiveDeck());
+    return;
+  }
+
+  const selected = matchSession.tiles.find((candidate) => candidate.id === matchSession.selectedId);
+  if (selected?.id === tile.id) {
+    matchSession.selectedId = null;
+  } else if (selected?.pairId === tile.pairId && selected.side !== tile.side) {
+    matchSession.matchedPairs.add(tile.pairId);
+    matchSession.selectedId = null;
+    if (matchSession.matchedPairs.size === matchSession.tiles.length / 2) {
+      matchSession.completedAt = Date.now();
+      stopMatchTimer();
+    }
+  } else {
+    matchSession.selectedId = tile.id;
+  }
+  renderMatchMode(getActiveDeck());
+}
+
+function startMatchTimer() {
+  stopMatchTimer();
+  matchTimerId = setInterval(() => {
+    if (studyMode === "match" && matchSession && !matchSession.completedAt) {
+      renderMatchMode(getActiveDeck());
+    }
+  }, 1000);
+}
+
+function stopMatchTimer() {
+  if (matchTimerId) {
+    clearInterval(matchTimerId);
+    matchTimerId = null;
+  }
+}
+
+function getMatchElapsedSeconds() {
+  if (!matchSession) return 0;
+  const endTime = matchSession.completedAt ?? Date.now();
+  return Math.max(0, Math.round((endTime - matchSession.startedAt) / 1000));
 }
 
 function renderCards() {
@@ -628,9 +1004,14 @@ function resetForm() {
 function resetStudy() {
   currentStudyCardId = null;
   showingAnswer = false;
+  learnFeedbackMessage = "";
+  testSession = null;
+  stopMatchTimer();
+  matchSession = null;
 }
 
 function flipStudyCard() {
+  if (studyMode !== "cards") return;
   const deck = getActiveDeck();
   if (!deck || !currentStudyCardId) return;
   showingAnswer = !showingAnswer;
