@@ -121,6 +121,34 @@ class CardwellSecurityTests(unittest.TestCase):
         server.clear_failed_login("admin")
         self.assertTrue(server.login_is_rate_limited("admin", "127.0.0.1"))
 
+    def test_reset_password_updates_hash_and_clears_other_sessions(self):
+        server.initialize_database()
+        timestamp = server.now_ms()
+
+        with server.connect() as db:
+            user = db.execute("SELECT id, username FROM users WHERE username = 'admin'").fetchone()
+            db.execute(
+                "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
+                ("keep-session", user["id"], timestamp + 60_000, timestamp),
+            )
+            db.execute(
+                "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
+                ("drop-session", user["id"], timestamp + 60_000, timestamp),
+            )
+            server.record_failed_login(user["username"], "127.0.0.1")
+
+            target = server.reset_password_for_user(db, user["id"], "new-unit-password", "keep-session")
+
+            self.assertEqual(target["username"], user["username"])
+            stored = db.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
+            self.assertTrue(server.verify_password("new-unit-password", stored["password_hash"]))
+            sessions = [
+                row["id"]
+                for row in db.execute("SELECT id FROM sessions WHERE user_id = ?", (user["id"],))
+            ]
+            self.assertEqual(sessions, ["keep-session"])
+            self.assertNotIn(("user", user["username"].lower()), server.FAILED_LOGIN_ATTEMPTS)
+
 
 if __name__ == "__main__":
     unittest.main()

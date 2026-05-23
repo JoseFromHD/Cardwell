@@ -7,6 +7,7 @@ let activeDeckId = null;
 let editingCardId = null;
 let currentStudyCardId = null;
 let showingAnswer = false;
+let lastGeneratedCredential = null;
 
 const authShell = document.querySelector("#authShell");
 const appShell = document.querySelector("#appShell");
@@ -45,8 +46,15 @@ const userPanel = document.querySelector("#userPanel");
 const userForm = document.querySelector("#userForm");
 const newUsernameInput = document.querySelector("#newUsernameInput");
 const newPasswordInput = document.querySelector("#newPasswordInput");
-const newUserAdminInput = document.querySelector("#newUserAdminInput");
+const newAccountRoleInput = document.querySelector("#newAccountRoleInput");
+const generateNewPasswordButton = document.querySelector("#generateNewPasswordButton");
 const userList = document.querySelector("#userList");
+const userSummary = document.querySelector("#userSummary");
+const generatedCredential = document.querySelector("#generatedCredential");
+const generatedCredentialTitle = document.querySelector("#generatedCredentialTitle");
+const generatedCredentialUsername = document.querySelector("#generatedCredentialUsername");
+const generatedCredentialPassword = document.querySelector("#generatedCredentialPassword");
+const copyGeneratedCredential = document.querySelector("#copyGeneratedCredential");
 
 document.querySelector("#newDeckButton").addEventListener("click", createDeck);
 document.querySelector("#renameDeckButton").addEventListener("click", renameDeck);
@@ -63,6 +71,8 @@ cancelEditButton.addEventListener("click", resetForm);
 searchInput.addEventListener("input", renderCards);
 accessForm.addEventListener("submit", shareDeck);
 userForm.addEventListener("submit", createUser);
+generateNewPasswordButton.addEventListener("click", generatePasswordForNewAccount);
+copyGeneratedCredential.addEventListener("click", copyLastGeneratedCredential);
 
 applyTheme(localStorage.getItem(themeKey) ?? "light");
 bootstrap();
@@ -361,10 +371,28 @@ function renderAccess() {
 
 function renderUsers() {
   userList.replaceChildren();
+  const owners = users.filter((user) => user.isAdmin).length;
+  userSummary.textContent = `${users.length} ${users.length === 1 ? "account" : "accounts"} · ${owners} ${owners === 1 ? "owner" : "owners"}`;
+
   users.forEach((user) => {
     const row = document.createElement("article");
-    row.className = "access-row";
-    row.innerHTML = `<div><strong>${escapeHtml(user.username)}</strong><p>${user.isAdmin ? "Admin" : "User"}</p></div>`;
+    const details = document.createElement("div");
+    const username = document.createElement("strong");
+    const role = document.createElement("span");
+    const resetButton = document.createElement("button");
+
+    row.className = "user-row";
+    details.className = "user-details";
+    username.textContent = user.username;
+    role.className = `role-badge ${user.isAdmin ? "owner" : "user"}`;
+    role.textContent = user.isAdmin ? "Owner" : "Study user";
+    resetButton.className = "ghost";
+    resetButton.type = "button";
+    resetButton.textContent = "Reset password";
+    resetButton.addEventListener("click", () => resetUserPassword(user));
+
+    details.append(username, role);
+    row.append(details, resetButton);
     userList.append(row);
   });
 }
@@ -513,19 +541,79 @@ async function revokeDeckAccess(userId) {
 
 async function createUser(event) {
   event.preventDefault();
+  const password = newPasswordInput.value.trim();
   try {
-    await api("/api/users", {
+    const result = await api("/api/users", {
       method: "POST",
       body: JSON.stringify({
         username: newUsernameInput.value.trim(),
-        password: newPasswordInput.value,
-        isAdmin: newUserAdminInput.checked
+        password,
+        generatePassword: !password,
+        isAdmin: newAccountRoleInput.value === "owner"
       })
     });
+    if (result.temporaryPassword) {
+      showGeneratedCredential("Account created", result.username, result.temporaryPassword);
+    } else {
+      hideGeneratedCredential();
+    }
     userForm.reset();
     await loadUsers();
   } catch (error) {
     alert(error.message);
+  }
+}
+
+async function resetUserPassword(user) {
+  if (!confirm(`Reset password for ${user.username}?`)) return;
+
+  try {
+    const result = await api(`/api/users/${user.id}/password`, {
+      method: "PATCH",
+      body: JSON.stringify({ generatePassword: true })
+    });
+    showGeneratedCredential("Password reset", result.user.username, result.temporaryPassword);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function generatePasswordForNewAccount() {
+  newPasswordInput.value = randomPassword();
+  newPasswordInput.focus();
+}
+
+function randomPassword(length = 20) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+function showGeneratedCredential(title, username, password) {
+  lastGeneratedCredential = { username, password };
+  generatedCredentialTitle.textContent = title;
+  generatedCredentialUsername.textContent = username;
+  generatedCredentialPassword.textContent = password;
+  generatedCredential.hidden = false;
+}
+
+function hideGeneratedCredential() {
+  lastGeneratedCredential = null;
+  generatedCredential.hidden = true;
+}
+
+async function copyLastGeneratedCredential() {
+  if (!lastGeneratedCredential) return;
+  const value = `${lastGeneratedCredential.username}\n${lastGeneratedCredential.password}`;
+  try {
+    await navigator.clipboard.writeText(value);
+    copyGeneratedCredential.textContent = "Copied";
+    setTimeout(() => {
+      copyGeneratedCredential.textContent = "Copy";
+    }, 1600);
+  } catch {
+    alert(value);
   }
 }
 

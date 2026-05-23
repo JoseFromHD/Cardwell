@@ -447,6 +447,38 @@ select {
   width: auto;
 }
 
+.password-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.credential-box {
+  align-items: center;
+  background: color-mix(in srgb, var(--mint), var(--panel) 38%);
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 72%);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.credential-box strong,
+.credential-box code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.credential-box code {
+  background: color-mix(in srgb, var(--panel), transparent 8%);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  margin-top: 8px;
+  padding: 8px;
+}
+
 .panel-heading {
   align-items: center;
   display: flex;
@@ -525,6 +557,12 @@ select {
   gap: 8px;
 }
 
+.user-list {
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .access-row {
   align-items: center;
   background: var(--field);
@@ -539,6 +577,48 @@ select {
 .access-row p {
   color: var(--muted);
   margin: 4px 0 0;
+}
+
+.user-row {
+  align-items: center;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.user-details {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.user-details strong {
+  overflow-wrap: anywhere;
+}
+
+.role-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  padding: 4px 8px;
+}
+
+.role-badge.owner {
+  background: color-mix(in srgb, var(--accent), transparent 84%);
+  border-color: color-mix(in srgb, var(--accent), transparent 68%);
+  color: var(--accent-strong);
+}
+
+.role-badge.user {
+  background: var(--panel-soft);
 }
 
 @media (max-width: 900px) {
@@ -576,13 +656,18 @@ select {
   .panel-heading,
   .card-row,
   .access-row,
+  .user-row,
+  .credential-box,
   .topbar-actions,
-  .form-actions {
+  .form-actions,
+  .password-row {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .card-row {
+  .card-row,
+  .user-row,
+  .password-row {
     display: flex;
   }
 

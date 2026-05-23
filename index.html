@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Cardwell</title>
-    <link rel="stylesheet" href="styles.css?v=3">
+    <link rel="stylesheet" href="styles.css?v=4">
   </head>
   <body>
     <main class="auth-shell" id="authShell" hidden>
@@ -161,9 +161,17 @@
           <section class="user-panel" id="userPanel" aria-label="Users" hidden>
             <div class="panel-heading">
               <div>
-                <h3>Users</h3>
-                <p>Create accounts for deck sharing</p>
+                <h3>Accounts</h3>
+                <p id="userSummary">0 accounts</p>
               </div>
+            </div>
+            <div class="credential-box" id="generatedCredential" hidden>
+              <div>
+                <p class="eyebrow" id="generatedCredentialTitle">Generated password</p>
+                <strong id="generatedCredentialUsername">-</strong>
+                <code id="generatedCredentialPassword">-</code>
+              </div>
+              <button class="ghost" id="copyGeneratedCredential" type="button">Copy</button>
             </div>
             <form class="user-form" id="userForm">
               <label>
@@ -171,14 +179,20 @@
                 <input id="newUsernameInput" autocomplete="off" required>
               </label>
               <label>
+                Account type
+                <select id="newAccountRoleInput">
+                  <option value="user">Study user</option>
+                  <option value="owner">Owner</option>
+                </select>
+              </label>
+              <label>
                 Password
-                <input id="newPasswordInput" type="password" autocomplete="new-password" required minlength="8">
+                <span class="password-row">
+                  <input id="newPasswordInput" type="text" autocomplete="new-password" minlength="8" placeholder="Leave blank to generate">
+                  <button class="ghost" id="generateNewPasswordButton" type="button">Generate</button>
+                </span>
               </label>
-              <label class="checkbox-label">
-                <input id="newUserAdminInput" type="checkbox">
-                Admin
-              </label>
-              <button class="primary" type="submit">Create user</button>
+              <button class="primary" type="submit">Create account</button>
             </form>
             <div class="user-list" id="userList"></div>
           </section>
@@ -214,6 +228,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
   </body>
 </html>

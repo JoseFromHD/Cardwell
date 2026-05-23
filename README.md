@@ -139,7 +139,7 @@ Cardwell supports three deck roles:
 - `editor`: rename decks and edit cards.
 - `viewer`: study cards only.
 
-Admins can create users. Deck owners can share decks with existing users from the Access panel.
+Admins can create study users, create additional owner accounts, and reset account passwords from the Accounts panel. Deck owners can share decks with existing users from the Access panel.
 
 Study progress is tracked per user, so shared decks can be studied independently without one user's review history changing another user's due cards.
 

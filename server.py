@@ -414,6 +414,16 @@ def require_username(data):
     return username
 
 
+def generate_temporary_password():
+    return secrets.token_urlsafe(18)
+
+
+def requested_password(data):
+    if data.get("generatePassword"):
+        return generate_temporary_password(), True
+    return require_password(data), False
+
+
 def prune_login_attempts(key):
     cutoff = time.time() - LOGIN_WINDOW_SECONDS
     attempts = [attempt for attempt in FAILED_LOGIN_ATTEMPTS.get(key, []) if attempt >= cutoff]
@@ -563,6 +573,25 @@ def import_decks_for_user(db, user_id, decks, timestamp):
     return imported_deck_ids
 
 
+def reset_password_for_user(db, user_id, password, keep_session_id=None):
+    target = db.execute(
+        "SELECT id, username, is_admin FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    if not target:
+        return None
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (hash_password(password), user_id),
+    )
+    db.execute(
+        "DELETE FROM sessions WHERE user_id = ? AND id != ?",
+        (user_id, keep_session_id),
+    )
+    clear_failed_login(target["username"])
+    return target
+
+
 class CardwellHandler(SimpleHTTPRequestHandler):
     server_version = "Cardwell/1.1"
 
@@ -685,6 +714,10 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             if match:
                 self.rename_deck(user, match.group(1))
                 return
+            match = re.fullmatch(r"/api/users/([^/]+)/password", self.route)
+            if match:
+                self.reset_user_password(user, match.group(1))
+                return
             match = re.fullmatch(r"/api/cards/([^/]+)", self.route)
             if match:
                 self.update_card(user, match.group(1))
@@ -735,6 +768,11 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         cookie = SimpleCookie(self.headers.get("Cookie"))
         morsel = cookie.get(SESSION_COOKIE)
         return get_user_by_session(morsel.value if morsel else None)
+
+    def current_session_id(self):
+        cookie = SimpleCookie(self.headers.get("Cookie"))
+        morsel = cookie.get(SESSION_COOKIE)
+        return morsel.value if morsel else None
 
     def require_user(self):
         user = self.current_user()
@@ -837,7 +875,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             return
         data = read_json(self)
         username = require_username(data)
-        password = require_password(data)
+        password, generated = requested_password(data)
         is_admin = 1 if bool(data.get("isAdmin")) else 0
         user_id = new_id()
         try:
@@ -851,7 +889,26 @@ class CardwellHandler(SimpleHTTPRequestHandler):
                 )
         except sqlite3.IntegrityError as error:
             raise ValueError("username is already in use") from error
-        self.send_json({"id": user_id, "username": username, "isAdmin": bool(is_admin)}, HTTPStatus.CREATED)
+        payload = {"id": user_id, "username": username, "isAdmin": bool(is_admin)}
+        if generated:
+            payload["temporaryPassword"] = password
+        self.send_json(payload, HTTPStatus.CREATED)
+
+    def reset_user_password(self, current_user, user_id):
+        if not current_user["isAdmin"]:
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Only admins can reset passwords")
+            return
+        data = read_json(self)
+        password, generated = requested_password(data)
+        with connect() as db:
+            target = reset_password_for_user(db, user_id, password, self.current_session_id())
+            if not target:
+                self.send_error_json(HTTPStatus.NOT_FOUND, "User not found")
+                return
+        payload = {"user": public_user(target)}
+        if generated:
+            payload["temporaryPassword"] = password
+        self.send_json(payload)
 
     def create_deck(self, user):
         data = read_json(self)
