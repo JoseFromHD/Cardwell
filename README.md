@@ -128,9 +128,11 @@ Imported decks and cards receive fresh internal IDs. This prevents a crafted bac
 
 ## Security Notes
 
-- State-changing API calls require a same-origin request plus Cardwell's request verification header.
-- Login attempts are throttled in-process by username and IP address.
-- Session cookies are `HttpOnly` and `SameSite=Lax`; set `CARDWELL_COOKIE_SECURE=true` when serving only through HTTPS.
+- State-changing API calls require a same-origin request, browser fetch metadata checks, and Cardwell's request verification header.
+- Passwords are hashed with PBKDF2-HMAC-SHA256 at 600,000 iterations. Older password hashes are upgraded after the next successful login.
+- Login attempts are throttled in-process by username and IP address. Put Cardwell behind reverse-proxy rate limiting before exposing it broadly or running multiple app containers.
+- Session cookies are `HttpOnly` and `SameSite=Lax`; set `CARDWELL_COOKIE_SECURE=true` when serving only through HTTPS. Session IDs are stored hashed in SQLite, so active sessions created by older versions may be signed out after an upgrade.
+- API and static responses include a restrictive Content Security Policy and defensive browser headers.
 - The Docker Compose files run the app as a non-root user, drop Linux capabilities, set `no-new-privileges`, and keep the container filesystem read-only except for the mounted `/data` volume and `/tmp`.
 
 ## Tests

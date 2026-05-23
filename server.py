@@ -20,7 +20,7 @@ DB_PATH = DATA_DIR / "cardwell.sqlite3"
 PORT = int(os.environ.get("PORT", "8080"))
 SESSION_COOKIE = "cardwell_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
-PASSWORD_ITERATIONS = 260_000
+PASSWORD_ITERATIONS = 600_000
 UNSAFE_DEFAULT_ADMIN_PASSWORD = "change-me-now"
 DEFAULT_ADMIN_USERNAME = os.environ.get("CARDWELL_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("CARDWELL_ADMIN_PASSWORD", UNSAFE_DEFAULT_ADMIN_PASSWORD)
@@ -39,6 +39,19 @@ PUBLIC_FILES = {
     "/styles.css": "styles.css",
     "/app.js": "app.js",
 }
+CONTENT_SECURITY_POLICY = " ".join(
+    [
+        "default-src 'self';",
+        "script-src 'self';",
+        "style-src 'self';",
+        "img-src 'self' data:;",
+        "connect-src 'self';",
+        "object-src 'none';",
+        "base-uri 'self';",
+        "form-action 'self';",
+        "frame-ancestors 'none';",
+    ]
+)
 
 
 def now_ms():
@@ -85,6 +98,36 @@ def verify_password(password, stored_hash):
         return hmac.compare_digest(actual, expected_hex)
     except (ValueError, TypeError):
         return False
+
+
+def password_hash_iterations(stored_hash):
+    try:
+        algorithm, iterations, _salt_hex, _expected_hex = stored_hash.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return None
+        return int(iterations)
+    except (ValueError, TypeError):
+        return None
+
+
+def password_needs_rehash(stored_hash):
+    iterations = password_hash_iterations(stored_hash)
+    return iterations is not None and iterations < PASSWORD_ITERATIONS
+
+
+def refresh_password_hash_if_needed(db, user_id, password, stored_hash):
+    if not password_needs_rehash(stored_hash):
+        return False
+    db.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (hash_password(password), user_id),
+    )
+    return True
+
+
+def hash_session_id(session_id):
+    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
 
 
 def initialize_database():
@@ -257,6 +300,7 @@ def initialize_database():
 def get_user_by_session(session_id):
     if not session_id:
         return None
+    session_record_id = hash_session_id(session_id)
     with connect() as db:
         row = db.execute(
             """
@@ -265,7 +309,7 @@ def get_user_by_session(session_id):
             JOIN users ON users.id = sessions.user_id
             WHERE sessions.id = ? AND sessions.expires_at > ?
             """,
-            (session_id, now_ms()),
+            (session_record_id, now_ms()),
         ).fetchone()
     if not row:
         return None
@@ -467,6 +511,8 @@ def same_origin(headers, candidate):
 
 
 def request_origin_is_allowed(headers):
+    if headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+        return False
     origin = headers.get("Origin")
     if origin:
         return same_origin(headers, origin)
@@ -613,8 +659,13 @@ class CardwellHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
-        self.send_header("Content-Security-Policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+        if COOKIE_SECURE:
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         self.send_header("Cache-Control", "no-store" if self.route.startswith("/api/") else "public, max-age=60")
         super().end_headers()
 
@@ -774,6 +825,10 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         return morsel.value if morsel else None
 
+    def current_session_record_id(self):
+        session_id = self.current_session_id()
+        return hash_session_id(session_id) if session_id else None
+
     def require_user(self):
         user = self.current_user()
         if not user:
@@ -831,9 +886,11 @@ class CardwellHandler(SimpleHTTPRequestHandler):
                 self.send_error_json(HTTPStatus.UNAUTHORIZED, "Invalid username or password")
                 return
             session_id = secrets.token_urlsafe(32)
+            session_record_id = hash_session_id(session_id)
+            refresh_password_hash_if_needed(db, row["id"], password, row["password_hash"])
             db.execute(
                 "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-                (session_id, row["id"], now_ms() + SESSION_TTL_SECONDS * 1000, now_ms()),
+                (session_record_id, row["id"], now_ms() + SESSION_TTL_SECONDS * 1000, now_ms()),
             )
             clear_failed_login(username)
 
@@ -854,7 +911,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         morsel = cookie.get(SESSION_COOKIE)
         if morsel:
             with connect() as db:
-                db.execute("DELETE FROM sessions WHERE id = ?", (morsel.value,))
+                db.execute("DELETE FROM sessions WHERE id = ?", (hash_session_id(morsel.value),))
         secure_attr = "; Secure" if COOKIE_SECURE else ""
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json")
@@ -901,7 +958,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         data = read_json(self)
         password, generated = requested_password(data)
         with connect() as db:
-            target = reset_password_for_user(db, user_id, password, self.current_session_id())
+            target = reset_password_for_user(db, user_id, password, self.current_session_record_id())
             if not target:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "User not found")
                 return
@@ -1048,8 +1105,8 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         self.send_json({"id": card_id, **next_values})
 
     def list_deck_access(self, user, deck_id):
-        if not self.require_deck_role(user, deck_id, "viewer"):
-            self.send_error_json(HTTPStatus.FORBIDDEN, "Deck access required")
+        if not self.require_deck_role(user, deck_id, "owner"):
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Owner access required")
             return
         with connect() as db:
             rows = list(db.execute(
