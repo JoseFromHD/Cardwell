@@ -12,10 +12,18 @@ services:
       PORT: "8080"
       CARDWELL_DATA_DIR: /data
       CARDWELL_ADMIN_USERNAME: "${CARDWELL_ADMIN_USERNAME:-admin}"
-      CARDWELL_ADMIN_PASSWORD: "${CARDWELL_ADMIN_PASSWORD:-change-me-now}"
+      CARDWELL_ADMIN_PASSWORD: "${CARDWELL_ADMIN_PASSWORD:?Set CARDWELL_ADMIN_PASSWORD before deploying Cardwell}"
+      CARDWELL_ALLOW_DEFAULT_ADMIN_PASSWORD: "${CARDWELL_ALLOW_DEFAULT_ADMIN_PASSWORD:-false}"
       CARDWELL_COOKIE_SECURE: "${CARDWELL_COOKIE_SECURE:-false}"
     volumes:
       - cardwell_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test:
         [

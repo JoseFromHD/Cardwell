@@ -1,0 +1,126 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+import server
+
+
+class CardwellSecurityTests(unittest.TestCase):
+    def setUp(self):
+        self.originals = {
+            "DATA_DIR": server.DATA_DIR,
+            "DB_PATH": server.DB_PATH,
+            "DEFAULT_ADMIN_USERNAME": server.DEFAULT_ADMIN_USERNAME,
+            "DEFAULT_ADMIN_PASSWORD": server.DEFAULT_ADMIN_PASSWORD,
+            "ALLOW_DEFAULT_ADMIN_PASSWORD": server.ALLOW_DEFAULT_ADMIN_PASSWORD,
+        }
+        self.temp_dir = tempfile.TemporaryDirectory()
+        data_dir = Path(self.temp_dir.name)
+        server.DATA_DIR = data_dir
+        server.DB_PATH = data_dir / "cardwell.sqlite3"
+        server.DEFAULT_ADMIN_USERNAME = "admin"
+        server.DEFAULT_ADMIN_PASSWORD = "unit-test-password"
+        server.ALLOW_DEFAULT_ADMIN_PASSWORD = False
+        server.FAILED_LOGIN_ATTEMPTS.clear()
+
+    def tearDown(self):
+        for key, value in self.originals.items():
+            setattr(server, key, value)
+        server.FAILED_LOGIN_ATTEMPTS.clear()
+        self.temp_dir.cleanup()
+
+    def test_first_start_refuses_unsafe_default_admin_password(self):
+        server.DEFAULT_ADMIN_PASSWORD = server.UNSAFE_DEFAULT_ADMIN_PASSWORD
+
+        with self.assertRaises(RuntimeError):
+            server.initialize_database()
+
+    def test_import_allocates_new_ids_and_does_not_grant_existing_deck_access(self):
+        server.initialize_database()
+        timestamp = server.now_ms()
+
+        with server.connect() as db:
+            attacker_id = server.new_id()
+            db.execute(
+                """
+                INSERT INTO users (id, username, password_hash, is_admin, created_at)
+                VALUES (?, ?, ?, 0, ?)
+                """,
+                (attacker_id, "attacker", server.hash_password("unit-test-password"), timestamp),
+            )
+            original_deck = db.execute("SELECT id FROM decks LIMIT 1").fetchone()
+            original_card = db.execute(
+                "SELECT id, front FROM cards WHERE deck_id = ? LIMIT 1",
+                (original_deck["id"],),
+            ).fetchone()
+
+            imported_deck_ids = server.import_decks_for_user(
+                db,
+                attacker_id,
+                [
+                    {
+                        "id": original_deck["id"],
+                        "name": "Imported Copy",
+                        "cards": [
+                            {
+                                "id": original_card["id"],
+                                "front": "Tampered front",
+                                "back": "Tampered back",
+                                "interval": 3,
+                                "ease": 2.4,
+                                "dueAt": timestamp,
+                                "reviews": 2,
+                            }
+                        ],
+                    }
+                ],
+                timestamp,
+            )
+
+            self.assertEqual(len(imported_deck_ids), 1)
+            self.assertNotEqual(imported_deck_ids[0], original_deck["id"])
+
+            attacker_original_access = db.execute(
+                "SELECT role FROM deck_access WHERE deck_id = ? AND user_id = ?",
+                (original_deck["id"], attacker_id),
+            ).fetchone()
+            self.assertIsNone(attacker_original_access)
+
+            unchanged_card = db.execute(
+                "SELECT front FROM cards WHERE id = ?",
+                (original_card["id"],),
+            ).fetchone()
+            self.assertEqual(unchanged_card["front"], original_card["front"])
+
+            imported_card = db.execute(
+                "SELECT id, front FROM cards WHERE deck_id = ?",
+                (imported_deck_ids[0],),
+            ).fetchone()
+            self.assertIsNotNone(imported_card)
+            self.assertNotEqual(imported_card["id"], original_card["id"])
+            self.assertEqual(imported_card["front"], "Tampered front")
+
+    def test_origin_check_rejects_cross_origin_requests(self):
+        self.assertTrue(
+            server.request_origin_is_allowed(
+                {"Host": "cardwell.example", "Origin": "https://cardwell.example"}
+            )
+        )
+        self.assertFalse(
+            server.request_origin_is_allowed(
+                {"Host": "cardwell.example", "Origin": "https://evil.example"}
+            )
+        )
+
+    def test_login_rate_limit_tracks_failed_attempts(self):
+        for _ in range(server.LOGIN_MAX_ATTEMPTS):
+            server.record_failed_login("admin", "127.0.0.1")
+
+        self.assertTrue(server.login_is_rate_limited("admin", "127.0.0.1"))
+
+        server.clear_failed_login("admin")
+        self.assertTrue(server.login_is_rate_limited("admin", "127.0.0.1"))
+
+
+if __name__ == "__main__":
+    unittest.main()

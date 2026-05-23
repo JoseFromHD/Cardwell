@@ -2,16 +2,10 @@
 
 Cardwell is a self-hosted flashcard app with a small server API, SQLite storage, and a Docker Compose setup.
 
-## Default Login
+## First Login
 
 The first admin account is created automatically when the database is initialized.
-
-```text
-Username: admin
-Password: change-me-now
-```
-
-Set a stronger password before first deploy:
+You must set a strong admin password before the first deploy:
 
 ```bash
 CARDWELL_ADMIN_USERNAME=admin CARDWELL_ADMIN_PASSWORD='use-a-long-password' docker compose up --build
@@ -23,6 +17,8 @@ In Portainer, add these as stack environment variables:
 CARDWELL_ADMIN_USERNAME=admin
 CARDWELL_ADMIN_PASSWORD=use-a-long-password
 ```
+
+Cardwell refuses to create the first admin account with the built-in `change-me-now` fallback unless `CARDWELL_ALLOW_DEFAULT_ADMIN_PASSWORD=true` is set intentionally for a local throwaway test.
 
 If the SQLite database already exists, changing these environment variables will not reset the existing admin password. Create a new admin user from the in-app Users panel or restore/recreate the volume intentionally.
 
@@ -119,6 +115,21 @@ Local data is stored in `./data/cardwell.sqlite3` unless `CARDWELL_DATA_DIR` is 
 ## Backups
 
 Use the in-app **Export** button to download a JSON backup. Use **Import** to restore a backup into the server database.
+
+Imported decks and cards receive fresh internal IDs. This prevents a crafted backup from overwriting existing cards or granting access to an existing deck by reusing known IDs.
+
+## Security Notes
+
+- State-changing API calls require a same-origin request plus Cardwell's request verification header.
+- Login attempts are throttled in-process by username and IP address.
+- Session cookies are `HttpOnly` and `SameSite=Lax`; set `CARDWELL_COOKIE_SECURE=true` when serving only through HTTPS.
+- The Docker Compose files run the app as a non-root user, drop Linux capabilities, set `no-new-privileges`, and keep the container filesystem read-only except for the mounted `/data` volume and `/tmp`.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## Access Control
 

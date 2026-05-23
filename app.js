@@ -69,8 +69,12 @@ bootstrap();
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers ?? {}) };
+  const method = (options.method ?? "GET").toUpperCase();
   if (options.body && !(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
+  }
+  if (method !== "GET") {
+    headers["X-Cardwell-CSRF"] = "1";
   }
 
   const response = await fetch(path, { ...options, headers });
@@ -586,11 +590,11 @@ async function importBackup(event) {
   try {
     const imported = JSON.parse(await file.text());
     if (!Array.isArray(imported.decks)) throw new Error("Invalid backup");
-    await api("/api/import", {
+    const result = await api("/api/import", {
       method: "POST",
       body: JSON.stringify(imported)
     });
-    activeDeckId = imported.decks[0]?.id ?? null;
+    activeDeckId = result.deckIds?.[0] ?? null;
     resetStudy();
     resetForm();
     await loadState(activeDeckId);

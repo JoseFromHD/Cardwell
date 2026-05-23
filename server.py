@@ -21,11 +21,18 @@ PORT = int(os.environ.get("PORT", "8080"))
 SESSION_COOKIE = "cardwell_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
 PASSWORD_ITERATIONS = 260_000
+UNSAFE_DEFAULT_ADMIN_PASSWORD = "change-me-now"
 DEFAULT_ADMIN_USERNAME = os.environ.get("CARDWELL_ADMIN_USERNAME", "admin")
-DEFAULT_ADMIN_PASSWORD = os.environ.get("CARDWELL_ADMIN_PASSWORD", "change-me-now")
+DEFAULT_ADMIN_PASSWORD = os.environ.get("CARDWELL_ADMIN_PASSWORD", UNSAFE_DEFAULT_ADMIN_PASSWORD)
+ALLOW_DEFAULT_ADMIN_PASSWORD = (
+    os.environ.get("CARDWELL_ALLOW_DEFAULT_ADMIN_PASSWORD", "false").lower() == "true"
+)
 COOKIE_SECURE = os.environ.get("CARDWELL_COOKIE_SECURE", "false").lower() == "true"
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_MAX_ATTEMPTS = 8
 ROLE_ORDER = {"viewer": 1, "editor": 2, "owner": 3}
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,80}$")
+FAILED_LOGIN_ATTEMPTS = {}
 PUBLIC_FILES = {
     "/": "index.html",
     "/index.html": "index.html",
@@ -59,6 +66,9 @@ def hash_password(password, salt=None):
         "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
     )
     return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt.hex()}${password_hash.hex()}"
+
+
+DUMMY_PASSWORD_HASH = hash_password("cardwell-invalid-password")
 
 
 def verify_password(password, stored_hash):
@@ -151,6 +161,14 @@ def initialize_database():
         timestamp = now_ms()
         admin = db.execute("SELECT id FROM users WHERE is_admin = 1 LIMIT 1").fetchone()
         if not admin:
+            if (
+                DEFAULT_ADMIN_PASSWORD == UNSAFE_DEFAULT_ADMIN_PASSWORD
+                and not ALLOW_DEFAULT_ADMIN_PASSWORD
+            ):
+                raise RuntimeError(
+                    "Set CARDWELL_ADMIN_PASSWORD before first startup. "
+                    "The built-in default password is disabled for safety."
+                )
             admin_id = new_id()
             db.execute(
                 """
@@ -396,6 +414,155 @@ def require_username(data):
     return username
 
 
+def prune_login_attempts(key):
+    cutoff = time.time() - LOGIN_WINDOW_SECONDS
+    attempts = [attempt for attempt in FAILED_LOGIN_ATTEMPTS.get(key, []) if attempt >= cutoff]
+    if attempts:
+        FAILED_LOGIN_ATTEMPTS[key] = attempts
+    else:
+        FAILED_LOGIN_ATTEMPTS.pop(key, None)
+    return attempts
+
+
+def login_rate_keys(username, ip_address):
+    normalized_username = username.lower()
+    return (("user", normalized_username), ("ip", ip_address))
+
+
+def login_is_rate_limited(username, ip_address):
+    return any(
+        len(prune_login_attempts(key)) >= LOGIN_MAX_ATTEMPTS
+        for key in login_rate_keys(username, ip_address)
+    )
+
+
+def record_failed_login(username, ip_address):
+    timestamp = time.time()
+    for key in login_rate_keys(username, ip_address):
+        attempts = prune_login_attempts(key)
+        attempts.append(timestamp)
+        FAILED_LOGIN_ATTEMPTS[key] = attempts[-LOGIN_MAX_ATTEMPTS:]
+
+
+def clear_failed_login(username):
+    FAILED_LOGIN_ATTEMPTS.pop(("user", username.lower()), None)
+
+
+def same_origin(headers, candidate):
+    host = headers.get("Host")
+    if not host or not candidate:
+        return True
+    parsed = urlparse(candidate)
+    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() == host.lower()
+
+
+def request_origin_is_allowed(headers):
+    origin = headers.get("Origin")
+    if origin:
+        return same_origin(headers, origin)
+    referer = headers.get("Referer")
+    if referer:
+        return same_origin(headers, referer)
+    return True
+
+
+def clean_import_text(value, key, max_length, default=None):
+    if not isinstance(value, str):
+        return default
+    value = value.strip()
+    if not value:
+        return default
+    if len(value) > max_length:
+        raise ValueError(f"{key} must be {max_length} characters or less")
+    return value
+
+
+def clean_import_int(value, default, minimum, maximum, key):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    if number < minimum or number > maximum:
+        raise ValueError(f"{key} must be between {minimum} and {maximum}")
+    return number
+
+
+def clean_import_float(value, default, minimum, maximum, key):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if number < minimum or number > maximum:
+        raise ValueError(f"{key} must be between {minimum} and {maximum}")
+    return number
+
+
+def import_decks_for_user(db, user_id, decks, timestamp):
+    imported_deck_ids = []
+
+    for deck in decks:
+        if not isinstance(deck, dict):
+            continue
+
+        deck_id = new_id()
+        name = clean_import_text(deck.get("name"), "deck name", 240, "Untitled deck")
+        db.execute(
+            "INSERT INTO decks (id, name, created_at) VALUES (?, ?, ?)",
+            (deck_id, name, timestamp),
+        )
+        db.execute(
+            """
+            INSERT INTO deck_access (deck_id, user_id, role, created_at)
+            VALUES (?, ?, 'owner', ?)
+            """,
+            (deck_id, user_id, timestamp),
+        )
+        imported_deck_ids.append(deck_id)
+
+        cards = deck.get("cards") if isinstance(deck.get("cards"), list) else []
+        for card in cards:
+            if not isinstance(card, dict):
+                continue
+            front = clean_import_text(card.get("front"), "front", 4000)
+            back = clean_import_text(card.get("back"), "back", 4000)
+            if not front or not back:
+                continue
+
+            card_id = new_id()
+            interval = clean_import_int(card.get("interval", 0), 0, 0, 36500, "interval")
+            ease = clean_import_float(card.get("ease", 2.5), 2.5, 1.3, 5.0, "ease")
+            due_at = clean_import_int(card.get("dueAt", timestamp), timestamp, 0, 4_102_444_800_000, "dueAt")
+            reviews = clean_import_int(card.get("reviews", 0), 0, 0, 1_000_000, "reviews")
+            db.execute(
+                """
+                INSERT INTO cards
+                  (id, deck_id, front, back, interval, ease, due_at, reviews, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    card_id,
+                    deck_id,
+                    front,
+                    back,
+                    interval,
+                    ease,
+                    due_at,
+                    reviews,
+                    timestamp,
+                ),
+            )
+            db.execute(
+                """
+                INSERT INTO user_card_progress
+                  (user_id, card_id, interval, ease, due_at, reviews, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, card_id, interval, ease, due_at, reviews, timestamp),
+            )
+
+    return imported_deck_ids
+
+
 class CardwellHandler(SimpleHTTPRequestHandler):
     server_version = "Cardwell/1.1"
 
@@ -405,6 +572,15 @@ class CardwellHandler(SimpleHTTPRequestHandler):
     @property
     def route(self):
         return urlparse(self.path).path
+
+    def require_request_integrity(self):
+        if not request_origin_is_allowed(self.headers):
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed")
+            return False
+        if self.headers.get("X-Cardwell-CSRF") != "1":
+            self.send_error_json(HTTPStatus.FORBIDDEN, "Missing request verification header")
+            return False
+        return True
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -460,6 +636,8 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         self.serve_static()
 
     def do_POST(self):
+        if not self.require_request_integrity():
+            return
         try:
             if self.route == "/api/login":
                 self.login()
@@ -497,6 +675,8 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
 
     def do_PATCH(self):
+        if not self.require_request_integrity():
+            return
         try:
             user = self.require_user()
             if not user:
@@ -514,6 +694,8 @@ class CardwellHandler(SimpleHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
 
     def do_DELETE(self):
+        if not self.require_request_integrity():
+            return
         user = self.require_user()
         if not user:
             return
@@ -592,13 +774,22 @@ class CardwellHandler(SimpleHTTPRequestHandler):
         password = data.get("password")
         if not isinstance(password, str):
             raise ValueError("password is required")
+        ip_address = self.client_address[0]
+        if login_is_rate_limited(username, ip_address):
+            self.send_error_json(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                "Too many failed login attempts. Try again later.",
+            )
+            return
 
         with connect() as db:
             row = db.execute(
                 "SELECT id, username, password_hash, is_admin FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
-            if not row or not verify_password(password, row["password_hash"]):
+            password_hash = row["password_hash"] if row else DUMMY_PASSWORD_HASH
+            if not verify_password(password, password_hash) or not row:
+                record_failed_login(username, ip_address)
                 self.send_error_json(HTTPStatus.UNAUTHORIZED, "Invalid username or password")
                 return
             session_id = secrets.token_urlsafe(32)
@@ -606,6 +797,7 @@ class CardwellHandler(SimpleHTTPRequestHandler):
                 "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
                 (session_id, row["id"], now_ms() + SESSION_TTL_SECONDS * 1000, now_ms()),
             )
+            clear_failed_login(username)
 
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json")
@@ -869,58 +1061,8 @@ class CardwellHandler(SimpleHTTPRequestHandler):
 
         timestamp = now_ms()
         with connect() as db:
-            for deck in decks:
-                deck_id = deck.get("id") if isinstance(deck.get("id"), str) else new_id()
-                name = deck.get("name") if isinstance(deck.get("name"), str) else "Untitled deck"
-                db.execute(
-                    "INSERT OR IGNORE INTO decks (id, name, created_at) VALUES (?, ?, ?)",
-                    (deck_id, name.strip() or "Untitled deck", timestamp),
-                )
-                db.execute(
-                    """
-                    INSERT OR REPLACE INTO deck_access (deck_id, user_id, role, created_at)
-                    VALUES (?, ?, 'owner', ?)
-                    """,
-                    (deck_id, user["id"], timestamp),
-                )
-                cards = deck.get("cards") if isinstance(deck.get("cards"), list) else []
-                for card in cards:
-                    front = str(card.get("front", "")).strip()
-                    back = str(card.get("back", "")).strip()
-                    if not front or not back:
-                        continue
-                    card_id = card.get("id") if isinstance(card.get("id"), str) else new_id()
-                    interval = int(card.get("interval", 0))
-                    ease = float(card.get("ease", 2.5))
-                    due_at = int(card.get("dueAt", timestamp))
-                    reviews = int(card.get("reviews", 0))
-                    db.execute(
-                        """
-                        INSERT OR REPLACE INTO cards
-                          (id, deck_id, front, back, interval, ease, due_at, reviews, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            card_id,
-                            deck_id,
-                            front,
-                            back,
-                            interval,
-                            ease,
-                            due_at,
-                            reviews,
-                            timestamp,
-                        ),
-                    )
-                    db.execute(
-                        """
-                        INSERT OR REPLACE INTO user_card_progress
-                          (user_id, card_id, interval, ease, due_at, reviews, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (user["id"], card_id, interval, ease, due_at, reviews, timestamp),
-                    )
-        self.send_json({"ok": True})
+            imported_deck_ids = import_decks_for_user(db, user["id"], decks, timestamp)
+        self.send_json({"ok": True, "deckIds": imported_deck_ids})
 
     def send_json(self, payload, status=HTTPStatus.OK):
         body = json.dumps(payload).encode("utf-8")
